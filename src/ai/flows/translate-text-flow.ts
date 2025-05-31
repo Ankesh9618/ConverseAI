@@ -1,3 +1,4 @@
+
 // src/ai/flows/translate-text-flow.ts
 'use server';
 /**
@@ -36,7 +37,7 @@ const prompt = ai.definePrompt({
 Text to translate:
 "{{textToTranslate}}"
 
-Return only the translated text.`,
+Return only the translated text. Ensure the translated text uses raw UTF-8 characters and does not include HTML entities for special characters.`,
 });
 
 const translateTextFlow = ai.defineFlow(
