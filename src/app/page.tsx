@@ -428,7 +428,7 @@ export default function LinguaLivePage() {
         />
       </main>
       <footer className="text-center py-4 text-sm text-muted-foreground border-t">
-        <p>&copy; {new Date().getFullYear()} LinguaLive. Practice makes perfect!</p>
+        <p>&copy; {new Date().getFullYear()} ConverseAI. Practice makes perfect!</p>
       </footer>
 
       <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
