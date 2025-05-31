@@ -312,7 +312,7 @@ export default function LinguaLivePage() {
       window.speechSynthesis.cancel();
       setIsAgentSpeaking(false);
     }
-  }, [selectedScenario, selectedInteractionMode]);
+  }, [selectedLanguage, selectedScenario, selectedInteractionMode]);
 
   useEffect(() => {
     setSelectedVoiceURI(undefined);
