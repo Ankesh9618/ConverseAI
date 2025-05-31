@@ -12,9 +12,10 @@ interface ConversationAreaProps {
   isLoading: boolean;
   selectedLanguage: string;
   onTranslateMessage?: (messageId: string, textToTranslate: string, originalLanguage: string) => void;
+  onCheckGrammar?: (messageId: string, textToCheck: string, language: string) => void;
 }
 
-export function ConversationArea({ messages, isLoading, selectedLanguage, onTranslateMessage }: ConversationAreaProps) {
+export function ConversationArea({ messages, isLoading, selectedLanguage, onTranslateMessage, onCheckGrammar }: ConversationAreaProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +44,7 @@ export function ConversationArea({ messages, isLoading, selectedLanguage, onTran
             message={msg}
             selectedLanguage={selectedLanguage}
             onTranslate={onTranslateMessage}
+            onCheckGrammar={onCheckGrammar}
           />
         ))}
         {isLoading && messages.length > 0 && messages[messages.length -1].speaker === 'user' && (

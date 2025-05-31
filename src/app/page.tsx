@@ -22,6 +22,7 @@ import {
 import { generateAgentResponse } from "@/ai/flows/generate-agent-response";
 import { provideSandboxSuggestions } from "@/ai/flows/provide-sandbox-suggestions";
 import { translateText } from "@/ai/flows/translate-text-flow";
+import { checkGrammar } from "@/ai/flows/check-grammar-flow";
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from "uuid"; 
 
@@ -97,7 +98,7 @@ export default function LinguaLivePage() {
       id: uuidv4(),
       speaker: "user",
       text: userInput,
-      originalLanguage: selectedLanguage, // User messages are in the selected language
+      originalLanguage: selectedLanguage, 
     };
     const updatedHistory = [...conversationHistory, newUserMessage];
     setConversationHistory(updatedHistory);
@@ -116,7 +117,7 @@ export default function LinguaLivePage() {
           id: uuidv4(),
           speaker: "agent",
           text: aiResponse.agentResponse,
-          originalLanguage: selectedLanguage, // Agent responds in the selected language
+          originalLanguage: selectedLanguage, 
         };
         setConversationHistory((prevHistory) => [...prevHistory, agentMessage]);
       } else {
@@ -174,7 +175,7 @@ export default function LinguaLivePage() {
 
   const handleTranslateMessage = async (messageId: string, textToTranslate: string, originalLang: string) => {
     setConversationHistory(prev => 
-      prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: true, translatedText: undefined } : msg)
+      prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: true, translatedText: undefined, grammarFeedback: undefined } : msg)
     );
     try {
       const translationResponse = await translateText({
@@ -202,6 +203,39 @@ export default function LinguaLivePage() {
       });
       setConversationHistory(prev =>
         prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: false } : msg)
+      );
+    }
+  };
+
+  const handleCheckGrammar = async (messageId: string, textToCheck: string, language: string) => {
+    setConversationHistory(prev => 
+      prev.map(msg => msg.id === messageId ? { ...msg, isCheckingGrammar: true, grammarFeedback: undefined, translatedText: undefined } : msg)
+    );
+    try {
+      const grammarResponse = await checkGrammar({
+        textToCheck: textToCheck,
+        language: language,
+      });
+      if (grammarResponse.feedback) {
+        setConversationHistory(prev =>
+          prev.map(msg => 
+            msg.id === messageId 
+            ? { ...msg, grammarFeedback: grammarResponse.feedback, isCheckingGrammar: false } 
+            : msg
+          )
+        );
+      } else {
+        throw new Error("Grammar check service did not return feedback.");
+      }
+    } catch (error) {
+      console.error("Error checking grammar:", error);
+      toast({
+        title: "Grammar Check Error",
+        description: "Failed to check grammar for the message. Please try again.",
+        variant: "destructive",
+      });
+      setConversationHistory(prev =>
+        prev.map(msg => msg.id === messageId ? { ...msg, isCheckingGrammar: false } : msg)
       );
     }
   };
@@ -331,6 +365,7 @@ export default function LinguaLivePage() {
           isLoading={isLoading}
           selectedLanguage={selectedLanguage}
           onTranslateMessage={handleTranslateMessage}
+          onCheckGrammar={handleCheckGrammar}
         />
         <UserInput
           onSendMessage={handleSendMessage}

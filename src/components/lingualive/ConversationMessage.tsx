@@ -4,30 +4,38 @@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { User, Bot, Languages, Loader2 } from "lucide-react";
+import { User, Bot, Languages, Loader2, SpellCheck } from "lucide-react";
 
 export interface Message {
   id: string;
   speaker: "user" | "agent";
   text: string;
-  originalLanguage?: string; // Language the message was originally in
-  translatedText?: string;  // English translation
-  isTranslating?: boolean;  // To show loading state for translation
+  originalLanguage?: string;
+  translatedText?: string;
+  isTranslating?: boolean;
+  grammarFeedback?: string;
+  isCheckingGrammar?: boolean;
 }
 
 interface ConversationMessageProps {
   message: Message;
   selectedLanguage: string;
   onTranslate?: (messageId: string, textToTranslate: string, originalLanguage: string) => void;
+  onCheckGrammar?: (messageId: string, textToCheck: string, language: string) => void;
 }
 
-export function ConversationMessage({ message, selectedLanguage, onTranslate }: ConversationMessageProps) {
+export function ConversationMessage({ message, selectedLanguage, onTranslate, onCheckGrammar }: ConversationMessageProps) {
   const isUser = message.speaker === "user";
+
   const showTranslateButton = 
-    !isUser && 
-    selectedLanguage !== "English" &&
-    message.originalLanguage === selectedLanguage && // Only show for current non-English convo
+    message.originalLanguage &&
+    message.originalLanguage !== "English" &&
     onTranslate;
+  
+  const showGrammarCheckButton = 
+    isUser && 
+    onCheckGrammar &&
+    message.originalLanguage; // Only show if original language is known
 
   return (
     <div
@@ -52,27 +60,59 @@ export function ConversationMessage({ message, selectedLanguage, onTranslate }: 
         )}
       >
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
-        {message.translatedText && (
-          <div className="mt-2 pt-2 border-t border-border/50">
-            <p className="text-xs font-semibold text-muted-foreground mb-0.5">Translation (English):</p>
-            <p className="text-sm italic leading-relaxed whitespace-pre-wrap text-muted-foreground">{message.translatedText}</p>
+        
+        {(message.translatedText || message.grammarFeedback) && (
+          <div className="mt-2 pt-2 border-t border-border/50 space-y-2">
+            {message.translatedText && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-0.5">Translation (English):</p>
+                <p className="text-sm italic leading-relaxed whitespace-pre-wrap text-muted-foreground">{message.translatedText}</p>
+              </div>
+            )}
+            {message.grammarFeedback && (
+               <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-0.5">Grammar Feedback:</p>
+                <p className="text-sm italic leading-relaxed whitespace-pre-wrap text-muted-foreground">{message.grammarFeedback}</p>
+              </div>
+            )}
           </div>
         )}
-        {showTranslateButton && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="mt-2 h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
-            onClick={() => onTranslate && onTranslate(message.id, message.text, message.originalLanguage || selectedLanguage)}
-            disabled={message.isTranslating}
-          >
-            {message.isTranslating ? (
-              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            ) : (
-              <Languages className="mr-1 h-3 w-3" />
+
+        {(showTranslateButton || showGrammarCheckButton) && (
+          <div className={cn("mt-2 flex items-center gap-2", (message.translatedText || message.grammarFeedback) ? "pt-2 border-t border-border/50" : "")}>
+            {showTranslateButton && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
+                onClick={() => onTranslate && message.originalLanguage && onTranslate(message.id, message.text, message.originalLanguage)}
+                disabled={message.isTranslating || message.isCheckingGrammar}
+              >
+                {message.isTranslating ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Languages className="mr-1 h-3 w-3" />
+                )}
+                Translate
+              </Button>
             )}
-            Translate to English
-          </Button>
+            {showGrammarCheckButton && message.originalLanguage && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
+                onClick={() => onCheckGrammar && message.originalLanguage && onCheckGrammar(message.id, message.text, message.originalLanguage)}
+                disabled={message.isCheckingGrammar || message.isTranslating}
+              >
+                {message.isCheckingGrammar ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <SpellCheck className="mr-1 h-3 w-3" />
+                )}
+                Check Grammar
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {isUser && (
