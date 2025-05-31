@@ -25,6 +25,24 @@ import { translateText } from "@/ai/flows/translate-text-flow";
 import { checkGrammar } from "@/ai/flows/check-grammar-flow";
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from "uuid"; 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+type PendingChangeType = 'language' | 'scenario' | 'interactionMode';
+
+interface PendingChangeDetails {
+  type: PendingChangeType;
+  value: string;
+  setter: (value: string) => void;
+}
 
 export default function LinguaLivePage() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>(DEFAULT_LANGUAGE);
@@ -38,6 +56,9 @@ export default function LinguaLivePage() {
 
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>(undefined);
+
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [pendingChangeDetails, setPendingChangeDetails] = useState<PendingChangeDetails | null>(null);
 
   const currentLanguageDetails = useMemo(() => LANGUAGES.find(l => l.value === selectedLanguage), [selectedLanguage]);
 
@@ -305,6 +326,34 @@ export default function LinguaLivePage() {
     }
   }, [conversationHistory, selectedInteractionMode, speakAgentMessage]);
 
+  const initiateChange = (
+    type: PendingChangeType,
+    newValue: string,
+    currentValue: string,
+    setter: (value: string) => void
+  ) => {
+    if (newValue === currentValue) return;
+
+    if (conversationHistory.length > 0) {
+      setPendingChangeDetails({ type, value: newValue, setter });
+      setIsConfirmDialogOpen(true);
+    } else {
+      setter(newValue);
+    }
+  };
+
+  const handleConfirmChange = () => {
+    if (pendingChangeDetails) {
+      pendingChangeDetails.setter(pendingChangeDetails.value);
+    }
+    setIsConfirmDialogOpen(false);
+    setPendingChangeDetails(null);
+  };
+
+  const handleCancelChange = () => {
+    setIsConfirmDialogOpen(false);
+    setPendingChangeDetails(null);
+  };
 
   useEffect(() => {
     setConversationHistory([]);
@@ -326,7 +375,7 @@ export default function LinguaLivePage() {
     };
   }, []);
 
-  const isUIBlocked = isLoading || isLoadingSuggestion || (selectedInteractionMode === 'verbal' && isAgentSpeaking);
+  const isUIBlocked = isLoading || isLoadingSuggestion || (selectedInteractionMode === 'verbal' && isAgentSpeaking) || isConfirmDialogOpen;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -336,19 +385,19 @@ export default function LinguaLivePage() {
           <LanguageSelector
             languages={LANGUAGES}
             selectedLanguage={selectedLanguage}
-            onSelectLanguage={setSelectedLanguage}
+            onSelectLanguage={(lang) => initiateChange('language', lang, selectedLanguage, setSelectedLanguage)}
             disabled={isUIBlocked}
           />
           <ScenarioSelector
             scenarios={SCENARIOS}
             selectedScenario={selectedScenario}
-            onSelectScenario={setSelectedScenario}
+            onSelectScenario={(scenario) => initiateChange('scenario', scenario, selectedScenario, setSelectedScenario)}
             disabled={isUIBlocked}
           />
           <InteractionSelector
             interactionModes={INTERACTION_MODES}
             selectedInteractionMode={selectedInteractionMode}
-            onSelectInteractionMode={setSelectedInteractionMode}
+            onSelectInteractionMode={(mode) => initiateChange('interactionMode', mode, selectedInteractionMode, setSelectedInteractionMode as (value: string) => void)}
             disabled={isUIBlocked}
           />
           <VoiceSelector
@@ -381,6 +430,23 @@ export default function LinguaLivePage() {
       <footer className="text-center py-4 text-sm text-muted-foreground border-t">
         <p>&copy; {new Date().getFullYear()} LinguaLive. Practice makes perfect!</p>
       </footer>
+
+      <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Change</AlertDialogTitle>
+            <AlertDialogDescription>
+              Changing the {pendingChangeDetails?.type} will reset your current conversation. Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelChange}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmChange}>Confirm</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
+    
