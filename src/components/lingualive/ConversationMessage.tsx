@@ -27,30 +27,81 @@ interface ConversationMessageProps {
 export function ConversationMessage({ message, selectedLanguage, onTranslate, onCheckGrammar }: ConversationMessageProps) {
   const isUser = message.speaker === "user";
 
-  const showTranslateButton = 
+  const showTranslateButton =
     message.originalLanguage &&
     message.originalLanguage !== "English" &&
     onTranslate;
-  
-  const showGrammarCheckButton = 
-    isUser && 
+
+  const showGrammarCheckButton =
+    isUser && // Grammar check only for user messages
     onCheckGrammar &&
-    message.originalLanguage; // Only show if original language is known
+    message.originalLanguage;
+
+  const renderActionButtons = () => {
+    if (!showTranslateButton && !showGrammarCheckButton) {
+      return null;
+    }
+
+    return (
+      <div className={cn(
+        "flex flex-col gap-1.5 self-start pt-1", // Align with top of bubble
+         isUser ? "order-first mr-2" : "order-last ml-2" // Place before user bubble, after agent bubble
+      )}>
+        {showTranslateButton && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-auto py-1 px-2 text-xs text-muted-foreground hover:text-accent-foreground hover:border-accent"
+            onClick={() => onTranslate && message.originalLanguage && onTranslate(message.id, message.text, message.originalLanguage)}
+            disabled={message.isTranslating || message.isCheckingGrammar}
+            title="Translate to English"
+          >
+            {message.isTranslating ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <Languages className="mr-1 h-3 w-3" />
+            )}
+            Translate
+          </Button>
+        )}
+        {showGrammarCheckButton && message.originalLanguage && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-auto py-1 px-2 text-xs text-muted-foreground hover:text-accent-foreground hover:border-accent"
+            onClick={() => onCheckGrammar && message.originalLanguage && onCheckGrammar(message.id, message.text, message.originalLanguage)}
+            disabled={message.isCheckingGrammar || message.isTranslating}
+            title="Check Grammar"
+          >
+            {message.isCheckingGrammar ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <SpellCheck className="mr-1 h-3 w-3" />
+            )}
+            Check Grammar
+          </Button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div
       className={cn(
-        "flex items-start gap-3 my-3 animate-in fade-in duration-300",
+        "flex items-start gap-0 my-3 animate-in fade-in duration-300", // gap-0 as buttons/avatars handle their own margin
         isUser ? "justify-end" : "justify-start"
       )}
     >
       {!isUser && (
-        <Avatar className="h-8 w-8 bg-accent text-accent-foreground shadow">
+        <Avatar className="h-8 w-8 bg-accent text-accent-foreground shadow mr-2 self-start mt-1">
           <AvatarFallback>
             <Bot className="h-5 w-5" />
           </AvatarFallback>
         </Avatar>
       )}
+
+      {isUser && renderActionButtons()}
+
       <div
         className={cn(
           "max-w-[70%] rounded-xl px-4 py-3 shadow-md",
@@ -60,7 +111,7 @@ export function ConversationMessage({ message, selectedLanguage, onTranslate, on
         )}
       >
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
-        
+
         {(message.translatedText || message.grammarFeedback) && (
           <div className="mt-2 pt-2 border-t border-border/50 space-y-2">
             {message.translatedText && (
@@ -77,46 +128,12 @@ export function ConversationMessage({ message, selectedLanguage, onTranslate, on
             )}
           </div>
         )}
-
-        {(showTranslateButton || showGrammarCheckButton) && (
-          <div className={cn("mt-2 flex items-center gap-2", (message.translatedText || message.grammarFeedback) ? "pt-2 border-t border-border/50" : "")}>
-            {showTranslateButton && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
-                onClick={() => onTranslate && message.originalLanguage && onTranslate(message.id, message.text, message.originalLanguage)}
-                disabled={message.isTranslating || message.isCheckingGrammar}
-              >
-                {message.isTranslating ? (
-                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                ) : (
-                  <Languages className="mr-1 h-3 w-3" />
-                )}
-                Translate
-              </Button>
-            )}
-            {showGrammarCheckButton && message.originalLanguage && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
-                onClick={() => onCheckGrammar && message.originalLanguage && onCheckGrammar(message.id, message.text, message.originalLanguage)}
-                disabled={message.isCheckingGrammar || message.isTranslating}
-              >
-                {message.isCheckingGrammar ? (
-                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                ) : (
-                  <SpellCheck className="mr-1 h-3 w-3" />
-                )}
-                Check Grammar
-              </Button>
-            )}
-          </div>
-        )}
       </div>
+
+      {!isUser && renderActionButtons()}
+
       {isUser && (
-        <Avatar className="h-8 w-8 bg-secondary text-secondary-foreground shadow">
+        <Avatar className="h-8 w-8 bg-secondary text-secondary-foreground shadow ml-2 self-start mt-1">
           <AvatarFallback>
             <User className="h-5 w-5" />
           </AvatarFallback>
