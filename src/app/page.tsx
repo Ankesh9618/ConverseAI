@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/lingualive/Header";
 import { LanguageSelector } from "@/components/lingualive/LanguageSelector";
 import { ScenarioSelector } from "@/components/lingualive/ScenarioSelector";
 import { ConversationArea } from "@/components/lingualive/ConversationArea";
 import { UserInput } from "@/components/lingualive/UserInput";
 import type { Message } from "@/components/lingualive/ConversationMessage";
-import { LANGUAGES, SCENARIOS, DEFAULT_LANGUAGE, DEFAULT_SCENARIO } from "@/lib/constants";
+import { LANGUAGES, SCENARIOS, DEFAULT_LANGUAGE, DEFAULT_SCENARIO, LanguageOption } from "@/lib/constants";
 import { generateAgentResponse } from "@/ai/flows/generate-agent-response";
 import { provideSandboxSuggestions } from "@/ai/flows/provide-sandbox-suggestions";
 import { useToast } from "@/hooks/use-toast";
@@ -19,7 +19,10 @@ export default function LinguaLivePage() {
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState<boolean>(false);
+  const [isAgentSpeaking, setIsAgentSpeaking] = useState<boolean>(false);
   const { toast } = useToast();
+
+  const currentLanguageDetails = LANGUAGES.find(l => l.value === selectedLanguage);
 
   const formatConversationHistoryForAI = (history: Message[]): string => {
     return history
@@ -35,6 +38,10 @@ export default function LinguaLivePage() {
         variant: "destructive",
       });
       return;
+    }
+     if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel(); // Stop any ongoing TTS from previous agent message
+      setIsAgentSpeaking(false);
     }
 
     const newUserMessage: Message = {
@@ -71,7 +78,6 @@ export default function LinguaLivePage() {
         description: "Failed to get a response from the AI. Please try again.",
         variant: "destructive",
       });
-       // Optionally add a placeholder error message from agent
        const agentErrorMessage: Message = {
         id: uuidv4(),
         speaker: "agent",
@@ -101,7 +107,6 @@ export default function LinguaLivePage() {
             </div>
           ),
         });
-        // Optionally, pre-fill the input or let user copy. For now, just a toast.
       }
     } catch (error) {
       console.error("Error getting suggestion:", error);
@@ -115,13 +120,85 @@ export default function LinguaLivePage() {
     }
   };
   
-  // Reset conversation when language or scenario changes
+  // TTS: Speak agent messages
+  const speakAgentMessage = useCallback(() => {
+    const lastMessage = conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1] : null;
+
+    if (lastMessage?.speaker === 'agent' && lastMessage.text && typeof window !== 'undefined' && window.speechSynthesis) {
+      const synth = window.speechSynthesis;
+      
+      // Ensure any previous speech is cancelled before starting new
+      if (synth.speaking) {
+        synth.cancel();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(lastMessage.text);
+      if (currentLanguageDetails?.bcp47) {
+        utterance.lang = currentLanguageDetails.bcp47;
+      }
+
+      const voices = synth.getVoices();
+      if (voices.length > 0) {
+        const voiceForLang = voices.find(v => v.lang === utterance.lang || (utterance.lang && v.lang.startsWith(utterance.lang.split('-')[0])));
+        if (voiceForLang) {
+          utterance.voice = voiceForLang;
+        }
+      }
+      
+      utterance.onstart = () => setIsAgentSpeaking(true);
+      utterance.onend = () => setIsAgentSpeaking(false);
+      utterance.onerror = (e) => {
+        console.error("Speech synthesis error:", e);
+        setIsAgentSpeaking(false);
+        toast({ title: "Voice Output Error", description: "Could not play agent's voice.", variant: "destructive" });
+      };
+      
+      synth.speak(utterance);
+    }
+  }, [conversationHistory, currentLanguageDetails?.bcp47, toast]);
+
+  useEffect(() => {
+    // This effect listens for voiceschanged to ensure voices are loaded, then calls speakAgentMessage.
+    // speakAgentMessage itself checks if it should speak the last message.
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const synth = window.speechSynthesis;
+      const loadVoicesAndSpeak = () => {
+        if (synth.getVoices().length > 0) {
+          speakAgentMessage();
+        }
+      };
+
+      if (synth.getVoices().length === 0) {
+        synth.onvoiceschanged = () => {
+          loadVoicesAndSpeak();
+          synth.onvoiceschanged = null; // Important to remove listener after voices are loaded
+        };
+      } else {
+        loadVoicesAndSpeak();
+      }
+    }
+  }, [speakAgentMessage]);
+
+
+  // Reset conversation and cancel TTS when language or scenario changes
   useEffect(() => {
     setConversationHistory([]);
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsAgentSpeaking(false);
+    }
   }, [selectedLanguage, selectedScenario]);
 
+  // Cleanup TTS on component unmount
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
-  const isUIBlocked = isLoading || isLoadingSuggestion;
+  const isUIBlocked = isLoading || isLoadingSuggestion || isAgentSpeaking;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -149,6 +226,7 @@ export default function LinguaLivePage() {
           isLoadingSuggestion={isLoadingSuggestion}
           isSandboxMode={selectedScenario === "Sandbox"}
           disabled={isUIBlocked || !selectedLanguage || !selectedScenario}
+          currentLanguageBcp47={currentLanguageDetails?.bcp47 || 'en-US'}
         />
       </main>
       <footer className="text-center py-4 text-sm text-muted-foreground border-t">

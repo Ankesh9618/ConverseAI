@@ -5,6 +5,7 @@ export interface LanguageOption {
   value: string;
   label: string;
   Icon?: LucideIcon;
+  bcp47: string; // Added for Web Speech API (STT & TTS)
 }
 
 export interface ScenarioOption {
@@ -14,13 +15,13 @@ export interface ScenarioOption {
 }
 
 export const LANGUAGES: LanguageOption[] = [
-  { value: 'English', label: 'English', Icon: Languages },
-  { value: 'Spanish', label: 'Español', Icon: Languages },
-  { value: 'French', label: 'Français', Icon: Languages },
-  { value: 'German', label: 'Deutsch', Icon: Languages },
-  { value: 'Japanese', label: '日本語', Icon: Languages },
-  { value: 'Mandarin Chinese', label: '中文 (普通话)', Icon: Languages },
-  { value: 'Italian', label: 'Italiano', Icon: Languages },
+  { value: 'English', label: 'English', Icon: Languages, bcp47: 'en-US' },
+  { value: 'Spanish', label: 'Español', Icon: Languages, bcp47: 'es-ES' },
+  { value: 'French', label: 'Français', Icon: Languages, bcp47: 'fr-FR' },
+  { value: 'German', label: 'Deutsch', Icon: Languages, bcp47: 'de-DE' },
+  { value: 'Japanese', label: '日本語', Icon: Languages, bcp47: 'ja-JP' },
+  { value: 'Mandarin Chinese', label: '中文 (普通话)', Icon: Languages, bcp47: 'zh-CN' },
+  { value: 'Italian', label: 'Italiano', Icon: Languages, bcp47: 'it-IT' },
 ];
 
 export const SCENARIOS: ScenarioOption[] = [
