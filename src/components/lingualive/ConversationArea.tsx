@@ -4,7 +4,7 @@ import type { Message } from "./ConversationMessage";
 import { ConversationMessage } from "./ConversationMessage";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import React, { useEffect, useRef } from "react";
-import { BotMessageSquare } from "lucide-react";
+import { BotMessageSquare, Bot } from "lucide-react";
 
 interface ConversationAreaProps {
   messages: Message[];
