@@ -1,10 +1,12 @@
+
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Header } from "@/components/lingualive/Header";
 import { LanguageSelector } from "@/components/lingualive/LanguageSelector";
 import { ScenarioSelector } from "@/components/lingualive/ScenarioSelector";
 import { InteractionSelector } from "@/components/lingualive/InteractionSelector";
+import { VoiceSelector } from "@/components/lingualive/VoiceSelector"; // New Import
 import { ConversationArea } from "@/components/lingualive/ConversationArea";
 import { UserInput } from "@/components/lingualive/UserInput";
 import type { Message } from "@/components/lingualive/ConversationMessage";
@@ -32,7 +34,42 @@ export default function LinguaLivePage() {
   const [isAgentSpeaking, setIsAgentSpeaking] = useState<boolean>(false);
   const { toast } = useToast();
 
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>(undefined);
+
   const currentLanguageDetails = LANGUAGES.find(l => l.value === selectedLanguage);
+
+  useEffect(() => {
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (!synth) return;
+
+    const loadVoices = () => {
+      const voices = synth.getVoices();
+      setAvailableVoices(voices);
+    };
+
+    // Voices list might be loaded asynchronously
+    loadVoices();
+    if (synth.onvoiceschanged !== undefined) {
+      synth.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      if (synth.onvoiceschanged !== undefined) {
+        synth.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  const voicesForSelectedLanguage = useMemo(() => {
+    if (!currentLanguageDetails?.bcp47 || availableVoices.length === 0) {
+      return [];
+    }
+    // Match base language (e.g., 'en' for 'en-US', 'en-GB')
+    const baseLang = currentLanguageDetails.bcp47.split('-')[0];
+    return availableVoices.filter(voice => voice.lang.startsWith(baseLang));
+  }, [availableVoices, currentLanguageDetails?.bcp47]);
+
 
   const formatConversationHistoryForAI = (history: Message[]): string => {
     return history
@@ -132,7 +169,7 @@ export default function LinguaLivePage() {
   
   const speakAgentMessage = useCallback(() => {
     if (selectedInteractionMode !== 'verbal') {
-      setIsAgentSpeaking(false); // Ensure speaking state is false if not in verbal mode
+      setIsAgentSpeaking(false);
       return;
     }
 
@@ -150,11 +187,20 @@ export default function LinguaLivePage() {
         utterance.lang = currentLanguageDetails.bcp47;
       }
 
-      const voices = synth.getVoices();
+      const voices = synth.getVoices(); // Get current voices list
       if (voices.length > 0) {
-        const voiceForLang = voices.find(v => v.lang === utterance.lang || (utterance.lang && v.lang.startsWith(utterance.lang.split('-')[0])));
-        if (voiceForLang) {
-          utterance.voice = voiceForLang;
+        let voiceToUse: SpeechSynthesisVoice | undefined = undefined;
+        if (selectedVoiceURI) {
+          voiceToUse = voices.find(v => v.voiceURI === selectedVoiceURI);
+        }
+        
+        if (!voiceToUse && utterance.lang) { // Fallback if selected voice is not found or not set
+          voiceToUse = voices.find(v => v.lang === utterance.lang) || 
+                       voices.find(v => utterance.lang && v.lang.startsWith(utterance.lang.split('-')[0]));
+        }
+        
+        if (voiceToUse) {
+          utterance.voice = voiceToUse;
         }
       }
       
@@ -168,28 +214,36 @@ export default function LinguaLivePage() {
       
       synth.speak(utterance);
     }
-  }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode]);
+  }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode, selectedVoiceURI]); // Added selectedVoiceURI
 
   useEffect(() => {
     if (selectedInteractionMode !== 'verbal') return;
-
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      const synth = window.speechSynthesis;
-      const loadVoicesAndSpeak = () => {
+    // Speech synthesis voices might load asynchronously.
+    // We call speakAgentMessage after voices are potentially loaded or changed.
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (synth) {
+      const handleVoicesChanged = () => {
+         // Ensure speak is called after voices are confirmed to be loaded by browser
         if (synth.getVoices().length > 0) {
           speakAgentMessage();
         }
       };
 
       if (synth.getVoices().length === 0) {
-        synth.onvoiceschanged = () => {
-          loadVoicesAndSpeak();
-          synth.onvoiceschanged = null; 
-        };
+         synth.onvoiceschanged = () => {
+            handleVoicesChanged();
+            // It's good practice to clear this once voices are loaded,
+            // but depending on browser, it might be needed persistently or just once.
+            // For simplicity here, let speakAgentMessage get fresh voices each time.
+         };
       } else {
-        loadVoicesAndSpeak();
+        handleVoicesChanged(); // Voices already loaded
       }
+      // Cleanup onvoiceschanged if it was set by this effect.
+      // However, the main voice loading effect also sets it. Consider centralizing.
+      // For now, this ensures speakAgentMessage has the latest voices.
     }
+
   }, [speakAgentMessage, selectedInteractionMode]);
 
 
@@ -199,8 +253,7 @@ export default function LinguaLivePage() {
       window.speechSynthesis.cancel();
       setIsAgentSpeaking(false);
     }
-    // Also consider stopping speech recognition if it's active
-    // This part would be in UserInput.tsx, but resetting state here is a good measure.
+    setSelectedVoiceURI(undefined); // Reset voice selection when core params change
   }, [selectedLanguage, selectedScenario, selectedInteractionMode]);
 
   useEffect(() => {
@@ -217,7 +270,7 @@ export default function LinguaLivePage() {
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
       <main className="flex-1 flex flex-col container mx-auto p-4 md:p-6 gap-4 md:gap-6">
-        <div className="grid md:grid-cols-3 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
           <LanguageSelector
             languages={LANGUAGES}
             selectedLanguage={selectedLanguage}
@@ -235,6 +288,12 @@ export default function LinguaLivePage() {
             selectedInteractionMode={selectedInteractionMode}
             onSelectInteractionMode={setSelectedInteractionMode}
             disabled={isUIBlocked}
+          />
+          <VoiceSelector
+            voices={voicesForSelectedLanguage}
+            selectedVoiceURI={selectedVoiceURI}
+            onSelectVoiceURI={setSelectedVoiceURI}
+            disabled={isUIBlocked || selectedInteractionMode === 'written' || voicesForSelectedLanguage.length === 0}
           />
         </div>
         <ConversationArea messages={conversationHistory} isLoading={isLoading} />
