@@ -26,7 +26,7 @@ export function ConversationArea({ messages, isLoading, selectedLanguage, onTran
 
   return (
     <ScrollArea
-      className="flex-1 rounded-lg border bg-card shadow-inner p-4 md:p-6"
+      className="h-[450px] rounded-lg border bg-card shadow-inner p-4 md:p-6"
       ref={scrollAreaRef}
     >
       <div className="space-y-4">
