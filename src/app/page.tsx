@@ -4,18 +4,28 @@ import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/lingualive/Header";
 import { LanguageSelector } from "@/components/lingualive/LanguageSelector";
 import { ScenarioSelector } from "@/components/lingualive/ScenarioSelector";
+import { InteractionSelector } from "@/components/lingualive/InteractionSelector";
 import { ConversationArea } from "@/components/lingualive/ConversationArea";
 import { UserInput } from "@/components/lingualive/UserInput";
 import type { Message } from "@/components/lingualive/ConversationMessage";
-import { LANGUAGES, SCENARIOS, DEFAULT_LANGUAGE, DEFAULT_SCENARIO, LanguageOption } from "@/lib/constants";
+import { 
+  LANGUAGES, 
+  SCENARIOS, 
+  INTERACTION_MODES,
+  DEFAULT_LANGUAGE, 
+  DEFAULT_SCENARIO,
+  DEFAULT_INTERACTION_MODE,
+  type InteractionModeOption 
+} from "@/lib/constants";
 import { generateAgentResponse } from "@/ai/flows/generate-agent-response";
 import { provideSandboxSuggestions } from "@/ai/flows/provide-sandbox-suggestions";
 import { useToast } from "@/hooks/use-toast";
-import { v4 as uuidv4 } from "uuid"; // For unique message IDs
+import { v4 as uuidv4 } from "uuid"; 
 
 export default function LinguaLivePage() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>(DEFAULT_LANGUAGE);
   const [selectedScenario, setSelectedScenario] = useState<string>(DEFAULT_SCENARIO);
+  const [selectedInteractionMode, setSelectedInteractionMode] = useState<InteractionModeOption['value']>(DEFAULT_INTERACTION_MODE);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState<boolean>(false);
@@ -31,16 +41,16 @@ export default function LinguaLivePage() {
   };
 
   const handleSendMessage = async (userInput: string) => {
-    if (!selectedLanguage || !selectedScenario) {
+    if (!selectedLanguage || !selectedScenario || !selectedInteractionMode) {
       toast({
         title: "Selection Missing",
-        description: "Please select a language and a scenario first.",
+        description: "Please select language, scenario, and interaction mode.",
         variant: "destructive",
       });
       return;
     }
-     if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel(); // Stop any ongoing TTS from previous agent message
+     if (selectedInteractionMode === 'verbal' && typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel(); 
       setIsAgentSpeaking(false);
     }
 
@@ -120,14 +130,17 @@ export default function LinguaLivePage() {
     }
   };
   
-  // TTS: Speak agent messages
   const speakAgentMessage = useCallback(() => {
+    if (selectedInteractionMode !== 'verbal') {
+      setIsAgentSpeaking(false); // Ensure speaking state is false if not in verbal mode
+      return;
+    }
+
     const lastMessage = conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1] : null;
 
     if (lastMessage?.speaker === 'agent' && lastMessage.text && typeof window !== 'undefined' && window.speechSynthesis) {
       const synth = window.speechSynthesis;
       
-      // Ensure any previous speech is cancelled before starting new
       if (synth.speaking) {
         synth.cancel();
       }
@@ -155,11 +168,11 @@ export default function LinguaLivePage() {
       
       synth.speak(utterance);
     }
-  }, [conversationHistory, currentLanguageDetails?.bcp47, toast]);
+  }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode]);
 
   useEffect(() => {
-    // This effect listens for voiceschanged to ensure voices are loaded, then calls speakAgentMessage.
-    // speakAgentMessage itself checks if it should speak the last message.
+    if (selectedInteractionMode !== 'verbal') return;
+
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       const synth = window.speechSynthesis;
       const loadVoicesAndSpeak = () => {
@@ -171,25 +184,25 @@ export default function LinguaLivePage() {
       if (synth.getVoices().length === 0) {
         synth.onvoiceschanged = () => {
           loadVoicesAndSpeak();
-          synth.onvoiceschanged = null; // Important to remove listener after voices are loaded
+          synth.onvoiceschanged = null; 
         };
       } else {
         loadVoicesAndSpeak();
       }
     }
-  }, [speakAgentMessage]);
+  }, [speakAgentMessage, selectedInteractionMode]);
 
 
-  // Reset conversation and cancel TTS when language or scenario changes
   useEffect(() => {
     setConversationHistory([]);
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
       setIsAgentSpeaking(false);
     }
-  }, [selectedLanguage, selectedScenario]);
+    // Also consider stopping speech recognition if it's active
+    // This part would be in UserInput.tsx, but resetting state here is a good measure.
+  }, [selectedLanguage, selectedScenario, selectedInteractionMode]);
 
-  // Cleanup TTS on component unmount
   useEffect(() => {
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -198,13 +211,13 @@ export default function LinguaLivePage() {
     };
   }, []);
 
-  const isUIBlocked = isLoading || isLoadingSuggestion || isAgentSpeaking;
+  const isUIBlocked = isLoading || isLoadingSuggestion || (selectedInteractionMode === 'verbal' && isAgentSpeaking);
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header />
       <main className="flex-1 flex flex-col container mx-auto p-4 md:p-6 gap-4 md:gap-6">
-        <div className="grid md:grid-cols-2 gap-4 md:gap-6">
+        <div className="grid md:grid-cols-3 gap-4 md:gap-6">
           <LanguageSelector
             languages={LANGUAGES}
             selectedLanguage={selectedLanguage}
@@ -217,6 +230,12 @@ export default function LinguaLivePage() {
             onSelectScenario={setSelectedScenario}
             disabled={isUIBlocked}
           />
+          <InteractionSelector
+            interactionModes={INTERACTION_MODES}
+            selectedInteractionMode={selectedInteractionMode}
+            onSelectInteractionMode={setSelectedInteractionMode}
+            disabled={isUIBlocked}
+          />
         </div>
         <ConversationArea messages={conversationHistory} isLoading={isLoading} />
         <UserInput
@@ -225,8 +244,9 @@ export default function LinguaLivePage() {
           isLoading={isLoading}
           isLoadingSuggestion={isLoadingSuggestion}
           isSandboxMode={selectedScenario === "Sandbox"}
-          disabled={isUIBlocked || !selectedLanguage || !selectedScenario}
+          disabled={isUIBlocked || !selectedLanguage || !selectedScenario || !selectedInteractionMode}
           currentLanguageBcp47={currentLanguageDetails?.bcp47 || 'en-US'}
+          interactionMode={selectedInteractionMode}
         />
       </main>
       <footer className="text-center py-4 text-sm text-muted-foreground border-t">

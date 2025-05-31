@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Send, Lightbulb, Loader2, Mic, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { InteractionModeOption } from "@/lib/constants";
 
 interface UserInputProps {
   onSendMessage: (message: string) => void;
@@ -14,6 +15,7 @@ interface UserInputProps {
   isSandboxMode: boolean;
   disabled?: boolean;
   currentLanguageBcp47: string;
+  interactionMode: InteractionModeOption['value'];
 }
 
 export function UserInput({
@@ -24,6 +26,7 @@ export function UserInput({
   isSandboxMode,
   disabled = false,
   currentLanguageBcp47,
+  interactionMode,
 }: UserInputProps) {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -31,7 +34,7 @@ export function UserInput({
   const [speechError, setSpeechError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const speechRecognitionRef = useRef<any>(null); // Using 'any' for SpeechRecognition
+  const speechRecognitionRef = useRef<any>(null); 
 
   useEffect(() => {
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -42,7 +45,7 @@ export function UserInput({
     setSpeechApiSupported(true);
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = false;
+    recognition.continuous = false; // Important for verbal mode auto-send
     recognition.interimResults = false;
 
     recognition.onstart = () => {
@@ -52,7 +55,12 @@ export function UserInput({
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
-      setMessage(prevMessage => prevMessage ? prevMessage + " " + transcript : transcript);
+      if (interactionMode === 'verbal') {
+        onSendMessage(transcript); // Auto-send in verbal mode
+        setMessage(""); // Clear textarea if it was showing transcript
+      } else {
+        setMessage(prevMessage => prevMessage ? prevMessage + " " + transcript : transcript);
+      }
     };
 
     recognition.onerror = (event: any) => {
@@ -84,11 +92,21 @@ export function UserInput({
         }
       }
     };
-  }, [toast]);
+  }, [toast, interactionMode, onSendMessage]); // Added interactionMode and onSendMessage to dependencies
+
+  // Stop listening if interaction mode changes to written
+  useEffect(() => {
+    if (interactionMode === 'written' && isListening && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
+    }
+  }, [interactionMode, isListening]);
 
   const handleMicClick = () => {
-    if (!speechApiSupported) {
-      toast({ title: "Voice input not supported", description: "Your browser does not support the Web Speech API.", variant: "destructive" });
+    if (interactionMode === 'written' || !speechApiSupported) {
+      if (!speechApiSupported) {
+        toast({ title: "Voice input not supported", description: "Your browser does not support the Web Speech API.", variant: "destructive" });
+      }
       return;
     }
     if (isLoading || disabled) return;
@@ -97,6 +115,7 @@ export function UserInput({
       if (isListening) {
         speechRecognitionRef.current.stop();
       } else {
+        setMessage(""); // Clear text area when starting mic in verbal mode
         speechRecognitionRef.current.lang = currentLanguageBcp47;
         try {
           speechRecognitionRef.current.start();
@@ -113,13 +132,17 @@ export function UserInput({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (message.trim() && !isLoading && !isListening) {
+    if (interactionMode === 'written' && message.trim() && !isLoading && !isListening) {
       onSendMessage(message.trim());
       setMessage("");
     }
+    // In verbal mode, send is handled by STT onresult
   };
 
-  const micButtonDisabled = disabled || isLoading || !speechApiSupported;
+  const micButtonDisabled = disabled || isLoading || !speechApiSupported || (interactionMode === 'written');
+  const sendButtonDisabled = disabled || isLoading || (interactionMode === 'written' && !message.trim()) || isListening || interactionMode === 'verbal';
+  const textAreaDisabled = disabled || isLoading || isListening || (interactionMode === 'verbal' && !isListening) ;
+
 
   return (
     <form onSubmit={handleSubmit} className="bg-card p-4 rounded-lg border shadow-sm">
@@ -127,36 +150,40 @@ export function UserInput({
         <Textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type your message here..."
+          placeholder={interactionMode === 'verbal' ? (isListening ? "Listening..." : "Click mic to speak...") : "Type your message here..."}
           className="flex-1 resize-none rounded-lg text-base shadow-sm focus:ring-accent"
           rows={2}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isListening) {
+            if (interactionMode === 'written' && e.key === 'Enter' && !e.shiftKey && !isLoading && !isListening) {
               e.preventDefault();
               handleSubmit(e);
             }
           }}
-          disabled={disabled || isLoading || isListening}
+          disabled={textAreaDisabled}
+          readOnly={interactionMode === 'verbal'} // Make read-only in verbal to show transcript
           aria-label="Your message"
         />
         <div className="flex flex-col gap-2">
-           <Button
-            type="button"
-            onClick={handleMicClick}
-            variant="outline"
-            size="icon"
-            className="rounded-lg h-11 w-11 border-primary text-primary hover:bg-primary/10"
-            disabled={micButtonDisabled}
-            aria-label={isListening ? "Stop listening" : speechApiSupported ? "Start voice input" : "Voice input not supported"}
-          >
-            {isListening ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : speechError && !isListening ? ( // Show error icon only if not currently listening (to avoid flicker)
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-            ) : (
-              <Mic className="h-5 w-5" />
-            )}
-          </Button>
+          {interactionMode === 'verbal' && (
+            <Button
+              type="button"
+              onClick={handleMicClick}
+              variant={isListening ? "destructive" : "outline"}
+              size="icon"
+              className="rounded-lg h-11 w-11 border-primary text-primary hover:bg-primary/10 data-[state=destructive]:bg-destructive data-[state=destructive]:text-destructive-foreground"
+              disabled={micButtonDisabled}
+              aria-label={isListening ? "Stop listening" : speechApiSupported ? "Start voice input" : "Voice input not supported"}
+            >
+              {isListening ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : speechError && !isListening ? (
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
+            </Button>
+          )}
+
           {isSandboxMode && onGetSuggestion && (
             <Button
               type="button"
@@ -174,22 +201,25 @@ export function UserInput({
               )}
             </Button>
           )}
-           <Button
-            type="submit"
-            size="icon"
-            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-11 w-11"
-            disabled={disabled || isLoading || !message.trim() || isListening}
-            aria-label="Send message"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </Button>
+
+          {interactionMode === 'written' && (
+             <Button
+              type="submit"
+              size="icon"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-11 w-11"
+              disabled={sendButtonDisabled}
+              aria-label="Send message"
+            >
+              {isLoading && interactionMode === 'written' ? ( // Show loader on send only in written mode
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Send className="h-5 w-5" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
-      {!speechApiSupported && <p className="text-xs text-muted-foreground mt-1 text-center">Voice input is not supported by your browser.</p>}
+      {interactionMode === 'verbal' && !speechApiSupported && <p className="text-xs text-muted-foreground mt-1 text-center">Voice input is not supported by your browser.</p>}
     </form>
   );
 }

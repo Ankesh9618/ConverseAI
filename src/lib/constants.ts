@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Users, Utensils, ShoppingCart, MapPin, Box, Languages } from 'lucide-react';
+import { Users, Utensils, ShoppingCart, MapPin, Box, Languages, Keyboard, Mic } from 'lucide-react';
 
 export interface LanguageOption {
   value: string;
@@ -10,6 +10,12 @@ export interface LanguageOption {
 
 export interface ScenarioOption {
   value: string;
+  label: string;
+  Icon: LucideIcon;
+}
+
+export interface InteractionModeOption {
+  value: 'written' | 'verbal';
   label: string;
   Icon: LucideIcon;
 }
@@ -32,5 +38,11 @@ export const SCENARIOS: ScenarioOption[] = [
   { value: 'Sandbox', label: 'Sandbox (Open Conversation)', Icon: Box },
 ];
 
+export const INTERACTION_MODES: InteractionModeOption[] = [
+  { value: 'written', label: 'Written', Icon: Keyboard },
+  { value: 'verbal', label: 'Verbal', Icon: Mic },
+];
+
 export const DEFAULT_LANGUAGE = LANGUAGES[0].value;
 export const DEFAULT_SCENARIO = SCENARIOS[0].value;
+export const DEFAULT_INTERACTION_MODE = INTERACTION_MODES[0].value;
