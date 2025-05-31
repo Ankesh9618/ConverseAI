@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Header } from "@/components/lingualive/Header";
 import { LanguageSelector } from "@/components/lingualive/LanguageSelector";
 import { ScenarioSelector } from "@/components/lingualive/ScenarioSelector";
@@ -10,21 +10,21 @@ import { VoiceSelector } from "@/components/lingualive/VoiceSelector";
 import { ConversationArea } from "@/components/lingualive/ConversationArea";
 import { UserInput } from "@/components/lingualive/UserInput";
 import type { Message } from "@/components/lingualive/ConversationMessage";
-import { 
-  LANGUAGES, 
-  SCENARIOS, 
+import {
+  LANGUAGES,
+  SCENARIOS,
   INTERACTION_MODES,
-  DEFAULT_LANGUAGE, 
+  DEFAULT_LANGUAGE,
   DEFAULT_SCENARIO,
   DEFAULT_INTERACTION_MODE,
-  type InteractionModeOption 
+  type InteractionModeOption
 } from "@/lib/constants";
 import { generateAgentResponse } from "@/ai/flows/generate-agent-response";
 import { provideSandboxSuggestions } from "@/ai/flows/provide-sandbox-suggestions";
 import { translateText } from "@/ai/flows/translate-text-flow";
 import { checkGrammar } from "@/ai/flows/check-grammar-flow";
 import { useToast } from "@/hooks/use-toast";
-import { v4 as uuidv4 } from "uuid"; 
+import { v4 as uuidv4 } from "uuid";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +35,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Loader2 } from "lucide-react";
+
 
 type PendingChangeType = 'language' | 'scenario' | 'interactionMode';
 
@@ -42,6 +44,7 @@ interface PendingChangeDetails {
   type: PendingChangeType;
   value: string;
   setter: (value: string) => void;
+  callback?: () => void;
 }
 
 export default function LinguaLivePage() {
@@ -49,7 +52,7 @@ export default function LinguaLivePage() {
   const [selectedScenario, setSelectedScenario] = useState<string>(DEFAULT_SCENARIO);
   const [selectedInteractionMode, setSelectedInteractionMode] = useState<InteractionModeOption['value']>(DEFAULT_INTERACTION_MODE);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false); // For AI responses
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState<boolean>(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState<boolean>(false);
   const { toast } = useToast();
@@ -62,6 +65,26 @@ export default function LinguaLivePage() {
 
   const currentLanguageDetails = useMemo(() => LANGUAGES.find(l => l.value === selectedLanguage), [selectedLanguage]);
 
+  const resetConversationState = () => {
+    setConversationHistory([]);
+    // Keep current selections for language, scenario, mode unless they are the ones being changed by pendingChange
+    // setSelectedLanguage(DEFAULT_LANGUAGE); // Only reset if explicitly part of a "new fresh conversation" action
+    // setSelectedScenario(DEFAULT_SCENARIO);
+    // setSelectedInteractionMode(DEFAULT_INTERACTION_MODE);
+    setSelectedVoiceURI(undefined);
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsAgentSpeaking(false);
+    }
+  };
+
+  const handleStartNewConversation = () => {
+    // This function is called when user confirms a setting change that implies a new conversation context
+    resetConversationState();
+    // If we want to reset language/scenario/mode to defaults when "New Conversation" is explicitly clicked (if such button existed)
+    // we would do it here. For now, changing a setting resets messages.
+  };
+
   useEffect(() => {
     const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     if (!synth) return;
@@ -71,17 +94,17 @@ export default function LinguaLivePage() {
       setAvailableVoices(voices);
     };
 
-    loadVoices(); 
-    if (synth.onvoiceschanged !== undefined) { 
+    loadVoices();
+    if (synth.onvoiceschanged !== undefined) {
       synth.onvoiceschanged = loadVoices;
     }
 
     return () => {
-      if (synth.onvoiceschanged !== undefined) {
+      if (synth && synth.onvoiceschanged !== undefined) {
         synth.onvoiceschanged = null;
       }
-      if(synth.speaking) {
-        synth.cancel(); 
+      if (synth && synth.speaking) {
+        synth.cancel();
       }
     };
   }, []); 
@@ -110,8 +133,8 @@ export default function LinguaLivePage() {
       });
       return;
     }
-     if (selectedInteractionMode === 'verbal' && typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel(); 
+    if (selectedInteractionMode === 'verbal' && typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
       setIsAgentSpeaking(false);
     }
 
@@ -119,10 +142,11 @@ export default function LinguaLivePage() {
       id: uuidv4(),
       speaker: "user",
       text: userInput,
-      originalLanguage: selectedLanguage, 
+      originalLanguage: selectedLanguage, // Set original language for user message
     };
-    const updatedHistory = [...conversationHistory, newUserMessage];
-    setConversationHistory(updatedHistory);
+    
+    setConversationHistory(prevHistory => [...prevHistory, newUserMessage]);
+    
     setIsLoading(true);
 
     try {
@@ -130,7 +154,7 @@ export default function LinguaLivePage() {
         language: selectedLanguage,
         scenario: selectedScenario,
         userInput: userInput,
-        conversationHistory: formatConversationHistoryForAI(updatedHistory),
+        conversationHistory: formatConversationHistoryForAI([...conversationHistory, newUserMessage]), 
       });
 
       if (aiResponse.agentResponse) {
@@ -138,9 +162,9 @@ export default function LinguaLivePage() {
           id: uuidv4(),
           speaker: "agent",
           text: aiResponse.agentResponse,
-          originalLanguage: selectedLanguage, 
+          originalLanguage: selectedLanguage, // Agent response is in the selected language
         };
-        setConversationHistory((prevHistory) => [...prevHistory, agentMessage]);
+        setConversationHistory(prevHistory => [...prevHistory, agentMessage]);
       } else {
         throw new Error("AI did not provide a response.");
       }
@@ -151,13 +175,13 @@ export default function LinguaLivePage() {
         description: "Failed to get a response from the AI. Please try again.",
         variant: "destructive",
       });
-       const agentErrorMessage: Message = {
+      const agentErrorMessage: Message = {
         id: uuidv4(),
         speaker: "agent",
         text: "I'm sorry, I encountered an error. Could you please try rephrasing or try again later?",
         originalLanguage: selectedLanguage,
       };
-      setConversationHistory((prevHistory) => [...prevHistory, agentErrorMessage]);
+      setConversationHistory(prevHistory => [...prevHistory, agentErrorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -195,7 +219,7 @@ export default function LinguaLivePage() {
   };
 
   const handleTranslateMessage = async (messageId: string, textToTranslate: string, originalLang: string) => {
-    setConversationHistory(prev => 
+    setConversationHistory(prev =>
       prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: true, translatedText: undefined, grammarFeedback: undefined } : msg)
     );
     try {
@@ -206,10 +230,10 @@ export default function LinguaLivePage() {
       });
       if (translationResponse.translatedText) {
         setConversationHistory(prev =>
-          prev.map(msg => 
-            msg.id === messageId 
-            ? { ...msg, translatedText: translationResponse.translatedText, isTranslating: false } 
-            : msg
+          prev.map(msg =>
+            msg.id === messageId
+              ? { ...msg, translatedText: translationResponse.translatedText, isTranslating: false }
+              : msg
           )
         );
       } else {
@@ -229,7 +253,7 @@ export default function LinguaLivePage() {
   };
 
   const handleCheckGrammar = async (messageId: string, textToCheck: string, language: string) => {
-    setConversationHistory(prev => 
+    setConversationHistory(prev =>
       prev.map(msg => msg.id === messageId ? { ...msg, isCheckingGrammar: true, grammarFeedback: undefined, translatedText: undefined } : msg)
     );
     try {
@@ -239,10 +263,10 @@ export default function LinguaLivePage() {
       });
       if (grammarResponse.feedback) {
         setConversationHistory(prev =>
-          prev.map(msg => 
-            msg.id === messageId 
-            ? { ...msg, grammarFeedback: grammarResponse.feedback, isCheckingGrammar: false } 
-            : msg
+          prev.map(msg =>
+            msg.id === messageId
+              ? { ...msg, grammarFeedback: grammarResponse.feedback, isCheckingGrammar: false }
+              : msg
           )
         );
       } else {
@@ -260,7 +284,7 @@ export default function LinguaLivePage() {
       );
     }
   };
-  
+
   const speakAgentMessage = useCallback(() => {
     if (selectedInteractionMode !== 'verbal') {
       setIsAgentSpeaking(false);
@@ -271,9 +295,9 @@ export default function LinguaLivePage() {
 
     if (lastMessage?.speaker === 'agent' && lastMessage.text && typeof window !== 'undefined' && window.speechSynthesis) {
       const synth = window.speechSynthesis;
-      
+
       if (synth.speaking) {
-        synth.cancel(); 
+        synth.cancel();
       }
 
       const utterance = new SpeechSynthesisUtterance(lastMessage.text);
@@ -281,23 +305,24 @@ export default function LinguaLivePage() {
         utterance.lang = currentLanguageDetails.bcp47;
       }
 
-      const voices = synth.getVoices(); 
+      const voices = synth.getVoices();
       if (voices.length > 0) {
         let voiceToUse: SpeechSynthesisVoice | undefined = undefined;
         if (selectedVoiceURI) {
           voiceToUse = voices.find(v => v.voiceURI === selectedVoiceURI);
         }
-        
-        if (!voiceToUse && utterance.lang) { 
-          voiceToUse = voices.find(v => v.lang === utterance.lang) || 
-                       voices.find(v => utterance.lang && v.lang.startsWith(utterance.lang.split('-')[0]));
+
+        if (!voiceToUse && utterance.lang) {
+          const baseLang = utterance.lang.split('-')[0];
+          voiceToUse = voices.find(v => v.lang === utterance.lang) ||
+            voices.find(v => v.lang.startsWith(baseLang));
         }
-        
+
         if (voiceToUse) {
           utterance.voice = voiceToUse;
         }
       }
-      
+
       utterance.onstart = () => setIsAgentSpeaking(true);
       utterance.onend = () => setIsAgentSpeaking(false);
       utterance.onerror = (e) => {
@@ -305,24 +330,24 @@ export default function LinguaLivePage() {
         setIsAgentSpeaking(false);
         toast({ title: "Voice Output Error", description: "Could not play agent's voice.", variant: "destructive" });
       };
-      
+
       synth.speak(utterance);
     }
-  }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode, selectedVoiceURI]); 
+  }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode, selectedVoiceURI]);
 
   useEffect(() => {
     const lastMessage = conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1] : null;
     if (selectedInteractionMode === 'verbal' && lastMessage?.speaker === 'agent') {
-        const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
-        if (synth && synth.getVoices().length > 0) {
-            speakAgentMessage();
-        } else if (synth) {
-            const tempVoicesChangedHandler = () => {
-                speakAgentMessage();
-                synth.onvoiceschanged = null; 
-            };
-            synth.onvoiceschanged = tempVoicesChangedHandler;
-        }
+      const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+      if (synth && synth.getVoices().length > 0) {
+        speakAgentMessage();
+      } else if (synth) {
+        const tempVoicesChangedHandler = () => {
+          speakAgentMessage();
+          synth.onvoiceschanged = null;
+        };
+        synth.onvoiceschanged = tempVoicesChangedHandler;
+      }
     }
   }, [conversationHistory, selectedInteractionMode, speakAgentMessage]);
 
@@ -330,21 +355,30 @@ export default function LinguaLivePage() {
     type: PendingChangeType,
     newValue: string,
     currentValue: string,
-    setter: (value: string) => void
+    setter: (value: string) => void,
+    callback?: () => void // Callback is currently not used for starting new, could be for other actions
   ) => {
     if (newValue === currentValue) return;
 
-    if (conversationHistory.length > 0) {
-      setPendingChangeDetails({ type, value: newValue, setter });
+    const shouldConfirm = conversationHistory.length > 0;
+
+    if (shouldConfirm) {
+      setPendingChangeDetails({ type, value: newValue, setter, callback });
       setIsConfirmDialogOpen(true);
     } else {
       setter(newValue);
+      // if (callback) callback(); // Not used for simple setting changes that reset convo
+      handleStartNewConversation(); // Directly reset if no history
     }
   };
 
   const handleConfirmChange = () => {
     if (pendingChangeDetails) {
       pendingChangeDetails.setter(pendingChangeDetails.value);
+      // if (pendingChangeDetails.callback) { // Callback not really used here
+      //   pendingChangeDetails.callback();
+      // }
+      handleStartNewConversation(); // Reset conversation history
     }
     setIsConfirmDialogOpen(false);
     setPendingChangeDetails(null);
@@ -354,28 +388,24 @@ export default function LinguaLivePage() {
     setIsConfirmDialogOpen(false);
     setPendingChangeDetails(null);
   };
-
+  
   useEffect(() => {
-    setConversationHistory([]);
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsAgentSpeaking(false);
-    }
-  }, [selectedLanguage, selectedScenario, selectedInteractionMode]);
+    setSelectedVoiceURI(undefined); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLanguage]); // Reset voice if language changes
 
-  useEffect(() => {
-    setSelectedVoiceURI(undefined);
-  }, [selectedLanguage]);
-
+  // Effect to stop speech synthesis on component unmount or when interaction mode/language/scenario changes
   useEffect(() => {
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
+        setIsAgentSpeaking(false);
       }
     };
-  }, []);
+  }, [selectedLanguage, selectedScenario, selectedInteractionMode]);
 
-  const isUIBlocked = isLoading || isLoadingSuggestion || (selectedInteractionMode === 'verbal' && isAgentSpeaking) || isConfirmDialogOpen;
+
+  const isUICompletelyBlocked = isLoading || isLoadingSuggestion || (selectedInteractionMode === 'verbal' && isAgentSpeaking) || isConfirmDialogOpen;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -385,33 +415,35 @@ export default function LinguaLivePage() {
           <LanguageSelector
             languages={LANGUAGES}
             selectedLanguage={selectedLanguage}
-            onSelectLanguage={(lang) => initiateChange('language', lang, selectedLanguage, setSelectedLanguage)}
-            disabled={isUIBlocked}
+            onSelectLanguage={(lang) =>
+              initiateChange('language', lang, selectedLanguage, setSelectedLanguage)
+            }
+            disabled={isUICompletelyBlocked}
           />
           <ScenarioSelector
             scenarios={SCENARIOS}
             selectedScenario={selectedScenario}
             onSelectScenario={(scenario) => initiateChange('scenario', scenario, selectedScenario, setSelectedScenario)}
-            disabled={isUIBlocked}
+            disabled={isUICompletelyBlocked}
           />
           <InteractionSelector
             interactionModes={INTERACTION_MODES}
             selectedInteractionMode={selectedInteractionMode}
             onSelectInteractionMode={(mode) => initiateChange('interactionMode', mode, selectedInteractionMode, setSelectedInteractionMode as (value: string) => void)}
-            disabled={isUIBlocked}
+            disabled={isUICompletelyBlocked}
           />
           <VoiceSelector
             voices={voicesForSelectedLanguage}
             selectedVoiceURI={selectedVoiceURI}
-            onSelectVoiceURI={setSelectedVoiceURI}
-            disabled={isUIBlocked || voicesForSelectedLanguage.length === 0 || selectedInteractionMode === 'written'}
+            onSelectVoiceURI={setSelectedVoiceURI} 
+            disabled={isUICompletelyBlocked || voicesForSelectedLanguage.length === 0 || selectedInteractionMode === 'written'}
             currentLanguageBcp47={currentLanguageDetails?.bcp47}
             interactionMode={selectedInteractionMode}
           />
         </div>
-        <ConversationArea 
-          messages={conversationHistory} 
-          isLoading={isLoading}
+        <ConversationArea
+          messages={conversationHistory}
+          isLoading={isLoading} 
           selectedLanguage={selectedLanguage}
           onTranslateMessage={handleTranslateMessage}
           onCheckGrammar={handleCheckGrammar}
@@ -419,10 +451,10 @@ export default function LinguaLivePage() {
         <UserInput
           onSendMessage={handleSendMessage}
           onGetSuggestion={selectedScenario === "Sandbox" ? handleGetSuggestion : undefined}
-          isLoading={isLoading}
+          isLoading={isLoading} 
           isLoadingSuggestion={isLoadingSuggestion}
           isSandboxMode={selectedScenario === "Sandbox"}
-          disabled={isUIBlocked || !selectedLanguage || !selectedScenario || !selectedInteractionMode}
+          disabled={isUICompletelyBlocked || !selectedLanguage || !selectedScenario || !selectedInteractionMode}
           currentLanguageBcp47={currentLanguageDetails?.bcp47 || 'en-US'}
           interactionMode={selectedInteractionMode}
         />
@@ -436,17 +468,15 @@ export default function LinguaLivePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Change</AlertDialogTitle>
             <AlertDialogDescription>
-              Changing the {pendingChangeDetails?.type} will reset your current conversation. Are you sure you want to proceed?
+              Changing the {pendingChangeDetails?.type} will start a new conversation. Your current conversation progress will be cleared. Are you sure you want to apply this setting and start a new conversation context?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancelChange}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmChange}>Confirm</AlertDialogAction>
+            <AlertDialogAction onClick={handleConfirmChange}>Confirm & Start New</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
-
-    

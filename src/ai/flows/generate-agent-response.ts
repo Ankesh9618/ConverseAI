@@ -39,6 +39,26 @@ const prompt = ai.definePrompt({
   input: {schema: GenerateAgentResponseInputSchema},
   output: {schema: GenerateAgentResponseOutputSchema},
   prompt: `You are a helpful AI agent assisting users in practicing conversations in a foreign language. The user has selected the following language: {{{language}}}. The scenario is: {{{scenario}}}.  Here is the conversation history: {{{conversationHistory}}}. User input: {{{userInput}}}. Generate a realistic and appropriate response in the specified language and scenario. Ensure the response is natural, uses raw UTF-8 characters, and does not include HTML entities for special characters.`,
+  config: {
+    safetySettings: [
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+    ],
+  },
 });
 
 const generateAgentResponseFlow = ai.defineFlow(
