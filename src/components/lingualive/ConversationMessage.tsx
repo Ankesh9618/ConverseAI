@@ -1,21 +1,33 @@
+
 "use client";
 
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { User, Bot, Languages, Loader2 } from "lucide-react";
 
 export interface Message {
   id: string;
   speaker: "user" | "agent";
   text: string;
+  originalLanguage?: string; // Language the message was originally in
+  translatedText?: string;  // English translation
+  isTranslating?: boolean;  // To show loading state for translation
 }
 
 interface ConversationMessageProps {
   message: Message;
+  selectedLanguage: string;
+  onTranslate?: (messageId: string, textToTranslate: string, originalLanguage: string) => void;
 }
 
-export function ConversationMessage({ message }: ConversationMessageProps) {
+export function ConversationMessage({ message, selectedLanguage, onTranslate }: ConversationMessageProps) {
   const isUser = message.speaker === "user";
+  const showTranslateButton = 
+    !isUser && 
+    selectedLanguage !== "English" &&
+    message.originalLanguage === selectedLanguage && // Only show for current non-English convo
+    onTranslate;
 
   return (
     <div
@@ -40,6 +52,28 @@ export function ConversationMessage({ message }: ConversationMessageProps) {
         )}
       >
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+        {message.translatedText && (
+          <div className="mt-2 pt-2 border-t border-border/50">
+            <p className="text-xs font-semibold text-muted-foreground mb-0.5">Translation (English):</p>
+            <p className="text-sm italic leading-relaxed whitespace-pre-wrap text-muted-foreground">{message.translatedText}</p>
+          </div>
+        )}
+        {showTranslateButton && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="mt-2 h-auto py-1 px-2 text-xs text-primary hover:bg-primary/10"
+            onClick={() => onTranslate && onTranslate(message.id, message.text, message.originalLanguage || selectedLanguage)}
+            disabled={message.isTranslating}
+          >
+            {message.isTranslating ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <Languages className="mr-1 h-3 w-3" />
+            )}
+            Translate to English
+          </Button>
+        )}
       </div>
       {isUser && (
         <Avatar className="h-8 w-8 bg-secondary text-secondary-foreground shadow">

@@ -21,6 +21,7 @@ import {
 } from "@/lib/constants";
 import { generateAgentResponse } from "@/ai/flows/generate-agent-response";
 import { provideSandboxSuggestions } from "@/ai/flows/provide-sandbox-suggestions";
+import { translateText } from "@/ai/flows/translate-text-flow";
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from "uuid"; 
 
@@ -48,8 +49,8 @@ export default function LinguaLivePage() {
       setAvailableVoices(voices);
     };
 
-    loadVoices(); // Initial load
-    if (synth.onvoiceschanged !== undefined) { // Subscribe to changes
+    loadVoices(); 
+    if (synth.onvoiceschanged !== undefined) { 
       synth.onvoiceschanged = loadVoices;
     }
 
@@ -58,10 +59,10 @@ export default function LinguaLivePage() {
         synth.onvoiceschanged = null;
       }
       if(synth.speaking) {
-        synth.cancel(); // Cancel any speech on component unmount or if dependencies change this effect
+        synth.cancel(); 
       }
     };
-  }, []); // Empty dependency array: runs once on mount and cleans up on unmount
+  }, []); 
 
   const voicesForSelectedLanguage = useMemo(() => {
     if (!currentLanguageDetails?.bcp47 || availableVoices.length === 0) {
@@ -96,6 +97,7 @@ export default function LinguaLivePage() {
       id: uuidv4(),
       speaker: "user",
       text: userInput,
+      originalLanguage: selectedLanguage, // User messages are in the selected language
     };
     const updatedHistory = [...conversationHistory, newUserMessage];
     setConversationHistory(updatedHistory);
@@ -114,6 +116,7 @@ export default function LinguaLivePage() {
           id: uuidv4(),
           speaker: "agent",
           text: aiResponse.agentResponse,
+          originalLanguage: selectedLanguage, // Agent responds in the selected language
         };
         setConversationHistory((prevHistory) => [...prevHistory, agentMessage]);
       } else {
@@ -130,6 +133,7 @@ export default function LinguaLivePage() {
         id: uuidv4(),
         speaker: "agent",
         text: "I'm sorry, I encountered an error. Could you please try rephrasing or try again later?",
+        originalLanguage: selectedLanguage,
       };
       setConversationHistory((prevHistory) => [...prevHistory, agentErrorMessage]);
     } finally {
@@ -167,6 +171,40 @@ export default function LinguaLivePage() {
       setIsLoadingSuggestion(false);
     }
   };
+
+  const handleTranslateMessage = async (messageId: string, textToTranslate: string, originalLang: string) => {
+    setConversationHistory(prev => 
+      prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: true, translatedText: undefined } : msg)
+    );
+    try {
+      const translationResponse = await translateText({
+        textToTranslate: textToTranslate,
+        sourceLanguage: originalLang,
+        targetLanguage: "English",
+      });
+      if (translationResponse.translatedText) {
+        setConversationHistory(prev =>
+          prev.map(msg => 
+            msg.id === messageId 
+            ? { ...msg, translatedText: translationResponse.translatedText, isTranslating: false } 
+            : msg
+          )
+        );
+      } else {
+        throw new Error("Translation service did not return text.");
+      }
+    } catch (error) {
+      console.error("Error translating text:", error);
+      toast({
+        title: "Translation Error",
+        description: "Failed to translate the message. Please try again.",
+        variant: "destructive",
+      });
+      setConversationHistory(prev =>
+        prev.map(msg => msg.id === messageId ? { ...msg, isTranslating: false } : msg)
+      );
+    }
+  };
   
   const speakAgentMessage = useCallback(() => {
     if (selectedInteractionMode !== 'verbal') {
@@ -180,7 +218,7 @@ export default function LinguaLivePage() {
       const synth = window.speechSynthesis;
       
       if (synth.speaking) {
-        synth.cancel(); // Cancel previous speech before starting new one
+        synth.cancel(); 
       }
 
       const utterance = new SpeechSynthesisUtterance(lastMessage.text);
@@ -218,22 +256,15 @@ export default function LinguaLivePage() {
   }, [conversationHistory, currentLanguageDetails?.bcp47, toast, selectedInteractionMode, selectedVoiceURI]); 
 
   useEffect(() => {
-    // This effect specifically triggers speaking the latest agent message.
-    // It runs when conversationHistory, selectedInteractionMode, or speakAgentMessage function itself changes.
     const lastMessage = conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1] : null;
     if (selectedInteractionMode === 'verbal' && lastMessage?.speaker === 'agent') {
-        // Ensure voices are loaded before attempting to speak.
-        // The main voice loading happens in another useEffect.
-        // Here, we check if voices are available, if not, onvoiceschanged should eventually trigger speakAgentMessage
-        // once they are. This call handles cases where voices are already loaded.
         const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
         if (synth && synth.getVoices().length > 0) {
             speakAgentMessage();
         } else if (synth) {
-            // If voices not yet loaded, wait for them
             const tempVoicesChangedHandler = () => {
                 speakAgentMessage();
-                synth.onvoiceschanged = null; // Clean up temp handler
+                synth.onvoiceschanged = null; 
             };
             synth.onvoiceschanged = tempVoicesChangedHandler;
         }
@@ -247,12 +278,9 @@ export default function LinguaLivePage() {
       window.speechSynthesis.cancel();
       setIsAgentSpeaking(false);
     }
-    // Reset voice selection only when language changes to ensure the voice list is relevant
-    // setSelectedVoiceURI(undefined); // This was too broad, moved selective reset below.
   }, [selectedScenario, selectedInteractionMode]);
 
   useEffect(() => {
-    // Specifically reset voice URI when language changes
     setSelectedVoiceURI(undefined);
   }, [selectedLanguage]);
 
@@ -298,7 +326,12 @@ export default function LinguaLivePage() {
             interactionMode={selectedInteractionMode}
           />
         </div>
-        <ConversationArea messages={conversationHistory} isLoading={isLoading} />
+        <ConversationArea 
+          messages={conversationHistory} 
+          isLoading={isLoading}
+          selectedLanguage={selectedLanguage}
+          onTranslateMessage={handleTranslateMessage}
+        />
         <UserInput
           onSendMessage={handleSendMessage}
           onGetSuggestion={selectedScenario === "Sandbox" ? handleGetSuggestion : undefined}

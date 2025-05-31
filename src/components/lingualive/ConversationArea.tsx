@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Message } from "./ConversationMessage";
@@ -9,9 +10,11 @@ import { BotMessageSquare, Bot } from "lucide-react";
 interface ConversationAreaProps {
   messages: Message[];
   isLoading: boolean;
+  selectedLanguage: string;
+  onTranslateMessage?: (messageId: string, textToTranslate: string, originalLanguage: string) => void;
 }
 
-export function ConversationArea({ messages, isLoading }: ConversationAreaProps) {
+export function ConversationArea({ messages, isLoading, selectedLanguage, onTranslateMessage }: ConversationAreaProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -35,7 +38,12 @@ export function ConversationArea({ messages, isLoading }: ConversationAreaProps)
           </div>
         )}
         {messages.map((msg) => (
-          <ConversationMessage key={msg.id} message={msg} />
+          <ConversationMessage 
+            key={msg.id} 
+            message={msg}
+            selectedLanguage={selectedLanguage}
+            onTranslate={onTranslateMessage}
+          />
         ))}
         {isLoading && messages.length > 0 && messages[messages.length -1].speaker === 'user' && (
            <div className="flex items-start gap-3 my-3 justify-start">
